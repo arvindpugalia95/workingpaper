@@ -136,8 +136,12 @@
   .tickm{
     width:26px;height:26px;border-radius:50%;transform:translate(-50%,-50%);
     display:grid;place-items:center;font-size:12.5px;font-weight:700;color:#fff;
-    box-shadow:0 1px 4px rgba(0,0,0,.4);cursor:pointer;user-select:none;
+    box-shadow:0 1px 3px rgba(0,0,0,.4);cursor:pointer;user-select:none;line-height:1;
   }
+  .sizerow{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+  .sizerow label{width:64px;color:var(--txt-faint);font-size:12px}
+  .sizerow input[type=range]{flex:1;min-width:0;accent-color:var(--tick)}
+  .sizerow .val{width:34px;text-align:right;font-size:12px;color:var(--txt-dim)}
   .tickm.sel{outline:2px solid var(--sel);outline-offset:2px}
   .tickm.flash{animation:pulse 1.1s ease-out}
   @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(124,192,255,.85)}100%{box-shadow:0 0 0 18px rgba(124,192,255,0)}}
@@ -234,6 +238,11 @@
           <input id="refNum" class="mono" value="1" style="max-width:74px">
           <span class="hint" style="flex:1">placed on click</span>
         </div>
+        <div class="sizerow">
+          <label for="tickSize">Mark size</label>
+          <input type="range" id="tickSize" min="10" max="34" step="1" value="26">
+          <span class="val mono" id="tickSizeVal">26</span>
+        </div>
         <div class="reflist" id="reflist"></div>
         <p class="hint" id="refEmpty">No marks yet. Pick the reference tool, click the figure on your balance sheet, then click the matching figure on the bank statement. Same number on both sides ties them together.</p>
       </div>
@@ -305,6 +314,7 @@ var S = {
   annos: [],        // {id,type,pid,x,y,w,h,ref,text,color}
   tool: "select",
   color: COLORS[0],
+  tickSize: 26,
   zoom: 1,
   fit: true,
   selected: null,
@@ -467,6 +477,9 @@ function el(a){
   if (a.type === "tick"){
     d.classList.add("tickm");
     d.style.background = a.color;
+    d.style.width = S.tickSize + "px";
+    d.style.height = S.tickSize + "px";
+    d.style.fontSize = Math.max(7, S.tickSize * 0.47).toFixed(1) + "px";
     d.textContent = a.ref;
     d.title = (refCount(a.ref) > 1 ? "Mark " + a.ref + " — click to jump to its pair" : "Mark " + a.ref + " — no match yet")
               + (a.text ? "\n" + a.text : "");
@@ -741,6 +754,12 @@ document.querySelectorAll(".tab").forEach(function(b){
   });
 })();
 
+$("#tickSize").addEventListener("input", function(){
+  S.tickSize = parseInt(this.value, 10) || 26;
+  $("#tickSizeVal").textContent = S.tickSize;
+  drawAnnos();
+});
+
 document.addEventListener("keydown", function(e){
   var t = e.target;
   if (t && (t.isContentEditable || t.tagName === "INPUT" || t.tagName === "TEXTAREA")){
@@ -828,7 +847,7 @@ $("#saveBtn").addEventListener("click", function(){
   setTimeout(function(){
     try{
       var pack = {
-        v:1, saved:new Date().toISOString(),
+        v:1, saved:new Date().toISOString(), tickSize:S.tickSize,
         files: S.files.map(function(f){ return {id:f.id, name:f.name, pageCount:f.pageCount, data:b64(f.bytes)}; }),
         pages: S.pages, annos: S.annos
       };
@@ -849,6 +868,8 @@ $("#projInput").addEventListener("change", function(){
     var p = JSON.parse(txt);
     S.files = p.files.map(function(x){ return {id:x.id, name:x.name, pageCount:x.pageCount, bytes:unb64(x.data)}; });
     S.pages = p.pages; S.annos = p.annos || [];
+    S.tickSize = p.tickSize || 26;
+    $("#tickSize").value = S.tickSize; $("#tickSizeVal").textContent = S.tickSize;
     select(null); drawFiles();
     return rebuild();
   }).then(function(){ busy(false); toast("Workpaper opened."); })
@@ -905,12 +926,14 @@ $("#exportBtn").addEventListener("click", function(){
               });
             } else if (a.type === "tick"){
               var pt = toUser(rot, W0, H0, a.x, a.y);
-              page.drawCircle({x: pt.x, y: pt.y, size: 9.5, color: c});
-              var s = 9, tw = bold.widthOfTextAtSize(String(a.ref), s);
-              var off = {x: -tw/2, y: -3.2};
-              if (rot === 90)  off = {x: 3.2, y: -tw/2};
-              if (rot === 180) off = {x: tw/2, y: 3.2};
-              if (rot === 270) off = {x: -3.2, y: tw/2};
+              var r = Math.max(3.5, S.tickSize * 0.365);
+              page.drawCircle({x: pt.x, y: pt.y, size: r, color: c});
+              var s = Math.max(4, S.tickSize * 0.345), d2 = s * 0.36;
+              var tw = bold.widthOfTextAtSize(String(a.ref), s);
+              var off = {x: -tw/2, y: -d2};
+              if (rot === 90)  off = {x: d2, y: -tw/2};
+              if (rot === 180) off = {x: tw/2, y: d2};
+              if (rot === 270) off = {x: -d2, y: tw/2};
               page.drawText(String(a.ref), {
                 x: pt.x + off.x, y: pt.y + off.y, size: s, font: bold,
                 color: PDFLib.rgb(1,1,1), rotate: ang
