@@ -97,6 +97,13 @@
   .rowbtn{width:22px;height:22px;border-radius:5px;color:var(--txt-faint);display:grid;place-items:center}
   .rowbtn:hover{background:#333c48;color:var(--txt)}
 
+  .librow{display:block;width:100%;text-align:left;padding:8px 9px;border:1px solid var(--line-soft);
+    border-radius:7px;margin-bottom:6px;background:var(--panel-2);cursor:pointer}
+  .librow:hover{border-color:#4a5566}
+  .librow.on{border-color:var(--tick);background:#2a2323}
+  .librow .t{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .librow .m{font-size:11.5px;color:var(--txt-faint);margin-top:2px}
+  .libgroup{font-size:11px;color:var(--txt-faint);margin:10px 0 5px;padding-left:2px}
   .reflist{display:flex;flex-direction:column;gap:5px}
   .refrow{display:flex;align-items:center;gap:9px;padding:7px 8px;border:1px solid var(--line-soft);border-radius:7px;background:var(--panel-2);cursor:pointer;text-align:left;width:100%}
   .refrow:hover{border-color:#4a5566}
@@ -178,6 +185,20 @@
   .toast.on{opacity:1}
   .busy{position:fixed;inset:0;background:rgba(8,10,12,.72);display:none;place-items:center;z-index:50;font-size:14px;color:var(--txt-dim)}
   .busy.on{display:grid}
+  .busycard{display:flex;flex-direction:column;align-items:center;gap:13px;text-align:center;padding:0 24px}
+  .spin{width:26px;height:26px;border-radius:50%;border:2.5px solid #3a434f;border-top-color:var(--sel);animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.spin{animation-duration:2.4s}}
+  .busysub{margin-top:5px;font-size:12px;color:var(--txt-faint);max-width:64ch;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:center}
+  .libpath{font-size:11px;color:var(--txt-faint);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left}
+  .report{border:1px solid var(--line-soft);border-left:3px solid var(--open);border-radius:6px;
+    padding:9px 10px;margin-bottom:10px;font-size:12px;line-height:1.55;color:var(--txt-dim);background:#221f18}
+  .report b{color:var(--txt)}
+  .report .exts{color:var(--txt-faint);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px}
+  .maybe{font-size:10px;color:var(--open);border:1px solid var(--open);border-radius:3px;padding:0 3px;margin-left:5px;vertical-align:1px}
+  #libFilter{width:100%;background:#171b21;border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:12.5px;margin-bottom:8px}
+  #libFilter:focus{outline:none;border-color:var(--sel)}
 
   @media print{
     .topbar,.rail,.panel,.toast{display:none!important}
@@ -227,9 +248,10 @@
 
     <div class="panel">
       <div class="tabs">
-        <button class="tab on" data-pane="paneRefs">References</button>
+        <button class="tab on" data-pane="paneRefs">Refs</button>
         <button class="tab" data-pane="paneFiles">Files</button>
-        <button class="tab" data-pane="paneHelp">How</button>
+        <button class="tab" data-pane="paneLib">Library</button>
+        <button class="tab" data-pane="paneHelp">Help</button>
       </div>
 
       <div class="pane on" id="paneRefs">
@@ -252,6 +274,19 @@
         <p class="hint" id="fileEmpty">No PDFs loaded.</p>
       </div>
 
+      <div class="pane" id="paneLib">
+        <div style="display:flex;gap:6px;margin-bottom:10px">
+          <button class="btn" id="pickDir" style="flex:1;justify-content:center">Choose folder</button>
+          <button class="btn" id="rescanDir" title="Refresh the list" style="display:none">↻</button>
+        </div>
+        <div id="dirName" class="hint" style="margin:0 0 8px;display:none"></div>
+        <div id="scanReport" class="report" style="display:none"></div>
+        <input id="libFilter" placeholder="Filter by name or folder" style="display:none">
+        <div id="liblist"></div>
+        <p class="hint" id="libEmpty">Point this at the folder where your team keeps saved workpapers — the top one is fine. It searches every subfolder underneath and lists each .wpaper with its full path. One click opens it.</p>
+        <button class="btn" id="saveHere" style="width:100%;justify-content:center;margin-top:10px;display:none">Save current workpaper here</button>
+      </div>
+
       <div class="pane" id="paneHelp">
         <p class="hint">
           <b>Merge</b> — add as many PDFs as you like. They stack in the order shown under Files; use the arrows to reorder.<br><br>
@@ -260,6 +295,7 @@
           <b>Comment</b> — the comment tool drops a sticky note you can type in and drag. The box tool circles a figure.<br><br>
           <b>Keys</b> — V, R, C, B to switch tools. Delete removes the selected mark. Esc goes back to select.<br><br>
           <b>Save</b> — "Save workpaper" writes one .wpaper file holding the PDFs and every mark, so you can reopen and carry on, or pass it to a reviewer. "Export marked PDF" burns the marks into a normal PDF for the client.<br><br>
+          <b>Library</b> — choose the folder your saved workpapers live in. It searches every subfolder underneath, however deep, and lists what it finds with the full path under each name. Click one to open it. In Chrome and Edge you can save straight back into the same subfolder without a download prompt.<br><br>
           Everything runs inside this browser tab. No file is uploaded anywhere.
         </p>
       </div>
@@ -280,7 +316,10 @@
         <div class="drop" id="drop">
           <h1>Merge your PDFs, then tie the numbers</h1>
           <p>Drop a balance sheet and a bank statement here. Mark a figure on one, mark the matching figure on the other, and the two are cross-referenced — the way you would tick a paper workpaper.</p>
-          <button class="btn primary" id="addBtn2">Choose PDFs</button>
+          <div style="display:flex;gap:8px;justify-content:center">
+            <button class="btn primary" id="addBtn2">Choose PDFs</button>
+            <button class="btn" id="openLib2">Open a saved workpaper</button>
+          </div>
           <ol>
             <li>Add two or more PDFs — they merge into one document.</li>
             <li>Click a figure with the reference tool to drop mark 1.</li>
@@ -296,8 +335,9 @@
 
 <input type="file" id="fileInput" accept="application/pdf" multiple hidden>
 <input type="file" id="projInput" accept=".wpaper,application/json" hidden>
+<input type="file" id="dirInput" webkitdirectory directory multiple hidden>
 <div class="toast" id="toast"></div>
-<div class="busy" id="busy"><div id="busyTxt">Working…</div></div>
+<div class="busy" id="busy"><div class="busycard"><div class="spin"></div><div id="busyTxt">Working…</div></div></div>
 
 <script>
 (function(){
@@ -319,7 +359,14 @@ var S = {
   fit: true,
   selected: null,
   pdf: null,
-  viewports: []
+  viewports: [],
+  library: [],
+  folders: 0,
+  stats: null,
+  currentDir: "",
+  dirHandle: null,
+  dirLabel: "",
+  currentName: ""
 };
 var uid = 0, nid = function(){ return "a" + (++uid) + "_" + Date.now().toString(36); };
 
@@ -331,8 +378,9 @@ function toast(msg){
   var t = $("#toast"); t.textContent = msg; t.classList.add("on");
   clearTimeout(toastT); toastT = setTimeout(function(){ t.classList.remove("on"); }, 2400);
 }
-function busy(on, txt){
-  $("#busyTxt").textContent = txt || "Working…";
+function busy(on, txt, sub){
+  $("#busyTxt").innerHTML = esc(txt || "Working…") +
+    (sub ? '<div class="busysub">' + esc(sub) + "</div>" : "");
   $("#busy").classList.toggle("on", !!on);
 }
 function esc(s){ return String(s).replace(/[&<>"]/g, function(c){
@@ -451,7 +499,7 @@ function renderAll(){
       });
     });
   });
-  return chain.then(function(){ drawAnnos(); drawRefs(); indicator(); });
+  return chain.then(function(){ drawAnnos(); drawRefs(); indicator(); drawLibrary(); });
 }
 
 /* ---------- annotations ---------- */
@@ -846,14 +894,10 @@ $("#saveBtn").addEventListener("click", function(){
   busy(true,"Packing workpaper…");
   setTimeout(function(){
     try{
-      var pack = {
-        v:1, saved:new Date().toISOString(), tickSize:S.tickSize,
-        files: S.files.map(function(f){ return {id:f.id, name:f.name, pageCount:f.pageCount, data:b64(f.bytes)}; }),
-        pages: S.pages, annos: S.annos
-      };
-      download(new Blob([JSON.stringify(pack)], {type:"application/json"}),
-               "workpaper-" + new Date().toISOString().slice(0,10) + ".wpaper");
-      toast("Workpaper saved.");
+      var fname = S.currentName ? S.currentName.split("/").pop()
+                : "workpaper-" + new Date().toISOString().slice(0,10) + ".wpaper";
+      download(new Blob([packBytes()], {type:"application/json"}), fname);
+      toast("Saved " + fname);
     } catch(err){ console.error(err); toast("Save failed — the files may be too large."); }
     busy(false);
   }, 40);
@@ -862,18 +906,256 @@ $("#saveBtn").addEventListener("click", function(){
 $("#openBtn").addEventListener("click", function(){ $("#projInput").click(); });
 $("#projInput").addEventListener("change", function(){
   var f = this.files[0]; this.value = "";
-  if (!f) return;
-  busy(true,"Opening workpaper…");
-  f.text().then(function(txt){
+  if (f) openProjectFile(f);
+});
+
+function openProjectFile(f, label){
+  busy(true, "Opening " + (label || f.name) + "…");
+  return f.text().then(function(txt){
     var p = JSON.parse(txt);
+    if (!p.files || !p.pages) throw new Error("not a workpaper");
     S.files = p.files.map(function(x){ return {id:x.id, name:x.name, pageCount:x.pageCount, bytes:unb64(x.data)}; });
     S.pages = p.pages; S.annos = p.annos || [];
     S.tickSize = p.tickSize || 26;
+    S.currentName = label || f.name;
     $("#tickSize").value = S.tickSize; $("#tickSizeVal").textContent = S.tickSize;
-    select(null); drawFiles();
+    select(null); drawFiles(); drawLibrary();
     return rebuild();
-  }).then(function(){ busy(false); toast("Workpaper opened."); })
+  }).then(function(){ busy(false); toast("Opened " + (label || f.name)); })
     .catch(function(e){ console.error(e); busy(false); toast("That file isn't a saved workpaper."); });
+}
+
+/* ---------- folder library ---------- */
+function packBytes(){
+  var pack = {
+    v:1, saved:new Date().toISOString(), tickSize:S.tickSize,
+    files: S.files.map(function(f){ return {id:f.id, name:f.name, pageCount:f.pageCount, data:b64(f.bytes)}; }),
+    pages: S.pages, annos: S.annos
+  };
+  return JSON.stringify(pack);
+}
+function kb(n){
+  return n > 1048576 ? (n/1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n/1024)) + " KB";
+}
+function when(ms){
+  if (!ms) return "";
+  var d = new Date(ms), now = new Date();
+  var sameDay = d.toDateString() === now.toDateString();
+  return sameDay ? "today " + d.toTimeString().slice(0,5)
+                 : d.toLocaleDateString(undefined, {day:"numeric", month:"short", year:"2-digit"});
+}
+
+$("#pickDir").addEventListener("click", pickFolder);
+$("#libFilter").addEventListener("input", drawLibrary);
+$("#openLib2").addEventListener("click", function(){
+  document.querySelector('.tab[data-pane="paneLib"]').click();
+  pickFolder();
+});
+$("#rescanDir").addEventListener("click", function(){
+  if (S.dirHandle) scanHandle(); else $("#dirInput").click();
+});
+
+function inFrame(){
+  try { return window.self !== window.top; } catch(e){ return true; }
+}
+function pickFolder(){
+  if (window.showDirectoryPicker && !inFrame()){
+    window.showDirectoryPicker({mode:"readwrite"}).then(function(dh){
+      S.dirHandle = dh; S.dirLabel = dh.name; return scanHandle();
+    }).catch(function(e){
+      if (e && e.name === "AbortError"){ toast("Folder picker closed."); return; }
+      console.warn(e); toast("Falling back to the basic folder picker.");
+      $("#dirInput").click();
+    });
+  } else {
+    $("#dirInput").click();
+  }
+}
+
+function scanHandle(){
+  S.library = []; S.folders = 0; S.stats = {files:0, ext:{}};
+  busy(true, "Scanning " + S.dirLabel + "…", "");
+  return walk(S.dirHandle, "", 0).then(function(){
+    busy(false); drawLibrary();
+    if (!S.library.length) toast("Nothing matched — see the scan report.");
+    else toast("Found " + S.library.length + " in " + S.folders + " folder" + (S.folders===1?"":"s") + ".");
+  }).catch(function(e){ console.error(e); busy(false); toast("Could not read that folder."); });
+}
+function scanTick(where){
+  busy(true, "Scanning " + S.dirLabel + "… " + S.library.length + " found",
+       where ? S.dirLabel + "/" + where : "");
+}
+var SKIP_DIRS = {"node_modules":1, "$RECYCLE.BIN":1, "System Volume Information":1};
+var WP_RE    = /\.wpaper(\.json|\.txt|\.download)?$/i;   // some browsers append an extension
+var MAYBE_RE = /\.json$/i;                                 // shown too, verified when opened
+function noteFile(name){
+  S.stats.files++;
+  var m = String(name).toLowerCase().match(/\.[a-z0-9]+$/);
+  var ex = m ? m[0] : "(no extension)";
+  S.stats.ext[ex] = (S.stats.ext[ex] || 0) + 1;
+}
+function walk(dir, prefix, depth){
+  if (depth > 12) return Promise.resolve();   // deep enough for any client tree
+  S.folders++;
+  scanTick(prefix);
+  var it = dir.values();
+  function step(){
+    return it.next().then(function(res){
+      if (res.done) return;
+      var e = res.value;
+      var p = Promise.resolve();
+      if (e.kind === "file"){
+        noteFile(e.name);
+        if (WP_RE.test(e.name) || MAYBE_RE.test(e.name)){
+          p = e.getFile().then(function(f){
+            S.library.push({name:e.name, path:prefix + e.name, dirPath:prefix,
+                            size:f.size, mtime:f.lastModified, file:f,
+                            maybe: !WP_RE.test(e.name)});
+            scanTick(prefix);
+          }).catch(function(){});
+        }
+      } else if (e.kind === "directory" && e.name.charAt(0) !== "." && !SKIP_DIRS[e.name]){
+        p = walk(e, prefix + e.name + "/", depth + 1);
+      }
+      return p.then(step);
+    });
+  }
+  return step();
+}
+
+$("#dirInput").addEventListener("change", function(){
+  var files = Array.prototype.slice.call(this.files || []);
+  this.value = "";
+  S.dirHandle = null;
+  if (!files.length) return;
+  S.dirLabel = (files[0].webkitRelativePath || "").split("/")[0] || "folder";
+  busy(true, "Scanning " + S.dirLabel + "…", files.length + " items");
+  setTimeout(function(){
+    S.stats = {files:0, ext:{}};
+    var dirs = {};
+    files.forEach(function(f){
+      noteFile(f.name);
+      var rel = (f.webkitRelativePath || f.name).split("/").slice(1).join("/") || f.name;
+      dirs[rel.indexOf("/") > -1 ? rel.slice(0, rel.lastIndexOf("/") + 1) : ""] = 1;
+    });
+    var wp = files.filter(function(f){ return WP_RE.test(f.name) || MAYBE_RE.test(f.name); });
+    S.library = wp.map(function(f){
+      var rel = (f.webkitRelativePath || f.name).split("/").slice(1).join("/") || f.name;
+      var dp = rel.indexOf("/") > -1 ? rel.slice(0, rel.lastIndexOf("/") + 1) : "";
+      return {name:f.name, path:rel, dirPath:dp, size:f.size, mtime:f.lastModified,
+              file:f, maybe: !WP_RE.test(f.name)};
+    });
+    S.folders = Object.keys(dirs).length;
+    busy(false); drawLibrary();
+    if (!wp.length) toast("Nothing matched — see the scan report.");
+    else toast("Found " + wp.length + " file" + (wp.length===1?"":"s") + ".");
+  }, 30);
+});
+
+function drawLibrary(){
+  var box = $("#liblist"); box.innerHTML = "";
+  var has = S.library.length > 0;
+  $("#libEmpty").style.display = has ? "none" : "";
+  $("#rescanDir").style.display = (S.dirHandle || S.dirLabel) ? "" : "none";
+  $("#pickDir").textContent = S.dirLabel ? "Change folder" : "Choose folder";
+  var dn = $("#dirName");
+  dn.style.display = S.dirLabel ? "" : "none";
+  dn.innerHTML = S.dirLabel ? "<b>" + esc(S.dirLabel) + "</b> · " + S.library.length +
+    " workpaper" + (S.library.length === 1 ? "" : "s") +
+    " across " + (S.folders || 1) + " folder" + ((S.folders || 1) === 1 ? "" : "s") : "";
+  $("#libFilter").style.display = S.library.length > 6 ? "" : "none";
+  $("#saveHere").style.display = (S.dirHandle && S.files.length) ? "" : "none";
+
+  var subOf = function(it){
+    return it.path.indexOf("/") > -1 ? it.path.slice(0, it.path.lastIndexOf("/")) : "";
+  };
+  var rep = $("#scanReport");
+  if (S.stats){
+    var exts = Object.keys(S.stats.ext).sort(function(a,b){ return S.stats.ext[b] - S.stats.ext[a]; });
+    var top = exts.slice(0,6).map(function(e){ return e + " " + S.stats.ext[e]; }).join("   ");
+    if (!S.library.length){
+      rep.style.display = "";
+      rep.innerHTML = "<b>Scanned " + S.stats.files + " file" + (S.stats.files===1?"":"s") +
+        " in " + S.folders + " folder" + (S.folders===1?"":"s") + ", none matched.</b><br>" +
+        (S.stats.files === 0
+          ? "The browser handed over nothing at all. If you are viewing this page inside a preview frame, download the file and open it directly in Chrome, then try again."
+          : "It looks for names ending in .wpaper (also .wpaper.json and .json). What is actually in there:<br><span class='exts'>" +
+            esc(top) + "</span>");
+    } else {
+      rep.style.display = "";
+      rep.style.borderLeftColor = "var(--tied)";
+      rep.innerHTML = "<b>" + S.library.length + " found</b> · scanned " + S.stats.files +
+        " files in " + S.folders + " folders";
+    }
+  } else { rep.style.display = "none"; }
+
+  var q = ($("#libFilter").value || "").toLowerCase().trim();
+  var items = S.library.filter(function(it){
+    return !q || (S.dirLabel + "/" + it.path).toLowerCase().indexOf(q) > -1;
+  }).sort(function(a,b){
+    var sa = subOf(a), sb = subOf(b);
+    if (sa.split("/").length !== sb.split("/").length && (sa === "" || sb === "")) return sa === "" ? -1 : 1;
+    if (sa !== sb) return sa.localeCompare(sb);   // keep each client folder together
+    return (b.mtime||0) - (a.mtime||0);           // newest first inside it
+  });
+  var lastDir = null;
+  items.forEach(function(it){
+    var sub = subOf(it);
+    if (sub !== lastDir && sub){
+      var g = document.createElement("div");
+      g.className = "libgroup"; g.textContent = S.dirLabel + "/" + sub;
+      box.appendChild(g); lastDir = sub;
+    } else if (!sub) { lastDir = ""; }
+    var b = document.createElement("button");
+    b.className = "librow" + (S.currentName === it.path ? " on" : "");
+    b.title = S.dirLabel + "/" + it.path;
+    b.innerHTML = '<div class="t">' + esc(it.maybe ? it.name : it.name.replace(WP_RE, "")) +
+                  (it.maybe ? '<span class="maybe">json</span>' : "") + '</div>' +
+                  '<div class="m mono">' + esc(when(it.mtime)) + "  ·  " + kb(it.size) + '</div>' +
+                  '<div class="libpath mono">' + esc(S.dirLabel + "/" + it.path) + '</div>';
+    b.addEventListener("click", function(){
+      if (S.files.length && !confirm("Open " + it.path + "? Any unsaved marks here will be lost.")) return;
+      S.currentDir = it.dirPath || "";
+      openProjectFile(it.file, it.path);
+    });
+    box.appendChild(b);
+  });
+}
+
+function dirHandleFor(pathStr){
+  var segs = String(pathStr || "").split("/").filter(Boolean);
+  var chain = Promise.resolve(S.dirHandle);
+  segs.forEach(function(s){
+    chain = chain.then(function(d){ return d.getDirectoryHandle(s, {create:true}); });
+  });
+  return chain;
+}
+
+$("#saveHere").addEventListener("click", function(){
+  if (!S.dirHandle){ toast("Choose a folder first."); return; }
+  if (!S.files.length){ toast("Nothing to save yet."); return; }
+  var suggested = S.currentName ||
+    (S.currentDir || "") + "workpaper-" + new Date().toISOString().slice(0,10) + ".wpaper";
+  var full = prompt("Save as — a path saves into that subfolder, creating it if needed:\n" +
+                    S.dirLabel + "/", suggested);
+  if (!full) return;
+  full = full.replace(/^\/+/, "").replace(/\\/g, "/");
+  if (!/\.wpaper$/i.test(full)) full += ".wpaper";
+  var base = full.split("/").pop();
+  var sub = full.slice(0, full.length - base.length);
+  busy(true, "Saving…", S.dirLabel + "/" + full);
+  var data = packBytes();
+  dirHandleFor(sub).then(function(d){
+    return d.getFileHandle(base, {create:true});
+  }).then(function(fh){
+    return fh.createWritable();
+  }).then(function(w){
+    return w.write(new Blob([data], {type:"application/json"})).then(function(){ return w.close(); });
+  }).then(function(){
+    S.currentName = full; S.currentDir = sub;
+    return scanHandle();
+  }).then(function(){ toast("Saved " + S.dirLabel + "/" + full); })
+    .catch(function(e){ console.error(e); busy(false); toast("Could not write to that folder."); });
 });
 
 /* ---------- export marked PDF ---------- */
@@ -1007,6 +1289,12 @@ $("#exportBtn").addEventListener("click", function(){
 
 setTool("select");
 drawFiles();
+drawLibrary();
+if (inFrame()){
+  var w = $("#scanReport");
+  w.style.display = "";
+  w.innerHTML = "<b>Running inside a preview frame.</b><br>Folder access is limited here and saving back to a folder is blocked. Download this page and open the file in Chrome for the full library.";
+}
 })();
 </script>
 </body>
