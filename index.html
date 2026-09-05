@@ -296,6 +296,7 @@
           <b>Keys</b> — V, R, C, B to switch tools. Delete removes the selected mark. Esc goes back to select.<br><br>
           <b>Save</b> — "Save workpaper" writes one .wpaper file holding the PDFs and every mark, so you can reopen and carry on, or pass it to a reviewer. "Export marked PDF" burns the marks into a normal PDF for the client.<br><br>
           <b>Library</b> — choose the folder your saved workpapers live in. It searches every subfolder underneath, however deep, and lists what it finds with the full path under each name. Click one to open it. In Chrome and Edge you can save straight back into the same subfolder without a download prompt.<br><br>
+          <b>Slow scan?</b> Point the folder picker at one client folder rather than the whole drive, and keep it off OneDrive or a mapped network drive if you can — cloud folders answer far more slowly than a local disk. Results appear as they are found, and you can stop the scan at any point.<br><br>
           Everything runs inside this browser tab. No file is uploaded anywhere.
         </p>
       </div>
@@ -337,7 +338,7 @@
 <input type="file" id="projInput" accept=".wpaper,application/json" hidden>
 <input type="file" id="dirInput" webkitdirectory directory multiple hidden>
 <div class="toast" id="toast"></div>
-<div class="busy" id="busy"><div class="busycard"><div class="spin"></div><div id="busyTxt">Working…</div></div></div>
+<div class="busy" id="busy"><div class="busycard"><div class="spin"></div><div id="busyTxt">Working…</div><button class="btn" id="stopScan" style="display:none">Stop and show what's found</button></div></div>
 
 <script>
 (function(){
@@ -363,6 +364,7 @@ var S = {
   library: [],
   folders: 0,
   stats: null,
+  cancelScan: false,
   currentDir: "",
   dirHandle: null,
   dirLabel: "",
@@ -974,54 +976,113 @@ function pickFolder(){
 
 function scanHandle(){
   S.library = []; S.folders = 0; S.stats = {files:0, ext:{}};
+  S.cancelScan = false;
+  var t0 = Date.now();
+  $("#stopScan").style.display = "";
   busy(true, "Scanning " + S.dirLabel + "…", "");
-  return walk(S.dirHandle, "", 0).then(function(){
+  var paint = setInterval(function(){ drawLibrary(); }, 700);   // results appear as they are found
+  return walkDir(S.dirHandle, "", 0).then(function(){
+    return fillMeta();
+  }).then(function(){
+    clearInterval(paint);
+    $("#stopScan").style.display = "none";
     busy(false); drawLibrary();
+    var secs = Math.round((Date.now() - t0)/1000);
     if (!S.library.length) toast("Nothing matched — see the scan report.");
-    else toast("Found " + S.library.length + " in " + S.folders + " folder" + (S.folders===1?"":"s") + ".");
-  }).catch(function(e){ console.error(e); busy(false); toast("Could not read that folder."); });
+    else toast("Found " + S.library.length + " in " + S.folders + " folders (" + secs + "s).");
+  }).catch(function(e){
+    clearInterval(paint); console.error(e);
+    $("#stopScan").style.display = "none";
+    busy(false); drawLibrary(); toast("Could not finish reading that folder.");
+  });
 }
+
+var lastTick = 0;
 function scanTick(where){
-  busy(true, "Scanning " + S.dirLabel + "… " + S.library.length + " found",
+  var now = Date.now();
+  if (now - lastTick < 180) return;          // repainting on every entry was the real drag
+  lastTick = now;
+  busy(true, "Scanning " + S.dirLabel + "… " + S.folders + " folders, " +
+             S.library.length + " found",
        where ? S.dirLabel + "/" + where : "");
 }
-var SKIP_DIRS = {"node_modules":1, "$RECYCLE.BIN":1, "System Volume Information":1};
-var WP_RE    = /\.wpaper(\.json|\.txt|\.download)?$/i;   // some browsers append an extension
-var MAYBE_RE = /\.json$/i;                                 // shown too, verified when opened
+
+var SKIP_DIRS = {"node_modules":1, "$RECYCLE.BIN":1, "System Volume Information":1,
+                 ".git":1, "AppData":1, "Windows":1, "Program Files":1};
+var WP_RE    = /\.wpaper(\.json|\.txt|\.download)?$/i;
+var MAYBE_RE = /\.json$/i;
 function noteFile(name){
   S.stats.files++;
   var m = String(name).toLowerCase().match(/\.[a-z0-9]+$/);
   var ex = m ? m[0] : "(no extension)";
   S.stats.ext[ex] = (S.stats.ext[ex] || 0) + 1;
 }
-function walk(dir, prefix, depth){
-  if (depth > 12) return Promise.resolve();   // deep enough for any client tree
-  S.folders++;
-  scanTick(prefix);
-  var it = dir.values();
+
+/* read one directory's entries in a single pass */
+function entriesOf(dir){
+  var out = [], it = dir.values();
   function step(){
-    return it.next().then(function(res){
-      if (res.done) return;
-      var e = res.value;
-      var p = Promise.resolve();
-      if (e.kind === "file"){
-        noteFile(e.name);
-        if (WP_RE.test(e.name) || MAYBE_RE.test(e.name)){
-          p = e.getFile().then(function(f){
-            S.library.push({name:e.name, path:prefix + e.name, dirPath:prefix,
-                            size:f.size, mtime:f.lastModified, file:f,
-                            maybe: !WP_RE.test(e.name)});
-            scanTick(prefix);
-          }).catch(function(){});
-        }
-      } else if (e.kind === "directory" && e.name.charAt(0) !== "." && !SKIP_DIRS[e.name]){
-        p = walk(e, prefix + e.name + "/", depth + 1);
-      }
-      return p.then(step);
+    return it.next().then(function(r){
+      if (r.done) return out;
+      out.push(r.value);
+      return step();
     });
   }
   return step();
 }
+
+/* run jobs a few at a time instead of one after another */
+function pool(items, width, fn){
+  var i = 0;
+  function lane(){
+    if (i >= items.length || S.cancelScan) return Promise.resolve();
+    var item = items[i++];
+    return fn(item).catch(function(){}).then(lane);
+  }
+  var lanes = [];
+  for (var k = 0; k < Math.min(width, items.length); k++) lanes.push(lane());
+  return Promise.all(lanes);
+}
+
+function walkDir(dir, prefix, depth){
+  if (S.cancelScan || depth > 12) return Promise.resolve();
+  return entriesOf(dir).then(function(entries){
+    if (S.cancelScan) return;
+    S.folders++;
+    var subs = [];
+    entries.forEach(function(e){
+      if (e.kind === "file"){
+        noteFile(e.name);
+        if (WP_RE.test(e.name) || MAYBE_RE.test(e.name)){
+          S.library.push({name:e.name, path:prefix + e.name, dirPath:prefix,
+                          handle:e, file:null, size:0, mtime:0,
+                          maybe: !WP_RE.test(e.name)});
+        }
+      } else if (e.kind === "directory" && e.name.charAt(0) !== "." && !SKIP_DIRS[e.name]){
+        subs.push(e);
+      }
+    });
+    scanTick(prefix);
+    return pool(subs, 8, function(sd){ return walkDir(sd, prefix + sd.name + "/", depth + 1); });
+  }).catch(function(){});   // unreadable folder: skip it and carry on
+}
+
+/* size and date are only fetched for the handful of files that matched */
+function fillMeta(){
+  var need = S.library.filter(function(it){ return !it.file; });
+  if (!need.length) return Promise.resolve();
+  busy(true, "Reading " + need.length + " workpaper" + (need.length===1?"":"s") + "…", "");
+  return pool(need, 8, function(it){
+    return it.handle.getFile().then(function(f){
+      it.file = f; it.size = f.size; it.mtime = f.lastModified;
+    });
+  });
+}
+
+$("#stopScan").addEventListener("click", function(){
+  S.cancelScan = true;
+  toast("Stopped. Showing what was found so far.");
+});
 
 $("#dirInput").addEventListener("change", function(){
   var files = Array.prototype.slice.call(this.files || []);
@@ -1096,7 +1157,8 @@ function drawLibrary(){
     var sa = subOf(a), sb = subOf(b);
     if (sa.split("/").length !== sb.split("/").length && (sa === "" || sb === "")) return sa === "" ? -1 : 1;
     if (sa !== sb) return sa.localeCompare(sb);   // keep each client folder together
-    return (b.mtime||0) - (a.mtime||0);           // newest first inside it
+    if ((a.mtime||0) !== (b.mtime||0)) return (b.mtime||0) - (a.mtime||0);  // newest first inside it
+    return a.name.localeCompare(b.name);
   });
   var lastDir = null;
   items.forEach(function(it){
@@ -1111,12 +1173,18 @@ function drawLibrary(){
     b.title = S.dirLabel + "/" + it.path;
     b.innerHTML = '<div class="t">' + esc(it.maybe ? it.name : it.name.replace(WP_RE, "")) +
                   (it.maybe ? '<span class="maybe">json</span>' : "") + '</div>' +
-                  '<div class="m mono">' + esc(when(it.mtime)) + "  ·  " + kb(it.size) + '</div>' +
+                  '<div class="m mono">' + (it.file ? esc(when(it.mtime)) + "  ·  " + kb(it.size)
+                                                       : "found — reading details…") + '</div>' +
                   '<div class="libpath mono">' + esc(S.dirLabel + "/" + it.path) + '</div>';
     b.addEventListener("click", function(){
       if (S.files.length && !confirm("Open " + it.path + "? Any unsaved marks here will be lost.")) return;
       S.currentDir = it.dirPath || "";
-      openProjectFile(it.file, it.path);
+      if (it.file) return openProjectFile(it.file, it.path);
+      busy(true, "Fetching " + it.name + "…");
+      it.handle.getFile().then(function(f){
+        it.file = f; it.size = f.size; it.mtime = f.lastModified;
+        return openProjectFile(f, it.path);
+      }).catch(function(){ busy(false); toast("Could not read that file."); });
     });
     box.appendChild(b);
   });
